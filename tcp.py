@@ -1,6 +1,7 @@
 import asyncio
 from tcputils import *
-
+import os
+import random
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -35,8 +36,14 @@ class Servidor:
             # A flag SYN estar setada significa que é um cliente tentando estabelecer uma conexão nova
             # TODO: talvez você precise passar mais coisas para o construtor de conexão
             conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao)
+            #Não Tenho certeza disso aqui em baixo
+            conexao.seq_no = seq_no
+            new_seq_no = random.randint(1,1000)
             # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
             # fazer aqui mesmo ou dentro da classe Conexao.
+            new_segment = fix_checksum(make_header(dst_port,src_port,new_seq_no,seq_no + 1,FLAGS_SYN+FLAGS_ACK),dst_addr,src_addr)
+            dados = [new_segment,src_addr]
+            conexao.enviar(dados)
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
@@ -52,6 +59,7 @@ class Conexao:
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
+        self.seq_no = None
         self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
@@ -79,6 +87,7 @@ class Conexao:
         Usado pela camada de aplicação para enviar dados
         """
         # TODO: implemente aqui o envio de dados.
+        self.servidor.rede.enviar(dados[0],dados[1])
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
         pass
