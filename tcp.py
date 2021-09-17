@@ -19,6 +19,15 @@ class Servidor:
         """
         self.callback = callback
 
+    def fechar_conexao(self, conexao):
+        src_addr, src_port, dst_addr, dst_port = conexao.id_conexao
+        new_segment = make_header(
+            dst_port, src_port, 1, conexao.seq_no + 1, FLAGS_ACK)
+        FIN_dados = [new_segment, dst_addr]
+        self.rede.enviar(FIN_dados[0], FIN_dados[1])
+        self.conexoes.pop(conexao.id_conexao)
+        pass
+
     def _rdt_rcv(self, src_addr, dst_addr, segment):
         src_port, dst_port, seq_no, ack_no, \
             flags, window_size, checksum, urg_ptr = read_header(segment)
@@ -69,6 +78,8 @@ class Servidor:
             # EXECUTAR CALLBACK DA CONEXAO COM DADOS = b''
             curr_conexao.callback(curr_conexao, b'')
 
+            # O ENVIO DO 'FIN' É TRATADO EM conexao.fechar()
+
 
 class Conexao:
     def __init__(self, servidor, id_conexao):
@@ -115,9 +126,7 @@ class Conexao:
         """
         # TODO: implemente aqui o fechamento de conexão
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
-        new_seq_no = random.randint(1, 1000)
         new_segment = make_header(
             src_port, dst_port, self.seq_no, 1, FLAGS_FIN)
         FIN_dados = [new_segment, src_addr]
         self.enviar(FIN_dados)
-        self.servidor.conexoes.pop(self.id_conexao)
