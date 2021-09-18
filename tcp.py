@@ -19,7 +19,7 @@ class Servidor:
         """
         self.callback = callback
 
-    def fechar_conexao(self, conexao):
+    def kill_conexao(self, conexao):
         src_addr, src_port, dst_addr, dst_port = conexao.id_conexao
         new_segment = make_header(
             dst_port, src_port, 1, conexao.seq_no + 1, FLAGS_ACK)
@@ -130,3 +130,4 @@ class Conexao:
             src_port, dst_port, self.seq_no, 1, FLAGS_FIN)
         FIN_dados = [new_segment, src_addr]
         self.enviar(FIN_dados)
+        self.servidor.kill_conexao(self)
