@@ -57,11 +57,12 @@ class Servidor:
             print("seq num cliente = ", seq_no)
             dados = [new_segment, src_addr]
             conexao.seq_no = new_seq_no
-            self.rede.enviar(dados[0],dados[1])
+            self.rede.enviar(dados[0], dados[1])
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
+            print("reconhece conexao")
             self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
 
         else:
@@ -99,18 +100,24 @@ class Conexao:
         print('Este é um exemplo de como fazer um timer')
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
-        
+
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
         #print("SEQ_NO ESPERADO: " +str(self.expected_seq_no))
         #print(seq_no, ack_no, flags, len(payload))
 
+        print(seq_no, self.expected_seq_no)
+        print("do meu, payload = ", payload)
+
         if(seq_no == self.expected_seq_no):
             self.expected_seq_no = seq_no + len(payload)
-        # Chame self.callback(self, dados) para passar dados para a camada de aplicação após 
-            new_segment = fix_checksum(make_header(src_port, dst_port, ack_no ,seq_no + len(payload), FLAGS_ACK),src_addr,dst_addr)
+        # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
+            new_segment = fix_checksum(make_header(
+                src_port, dst_port, ack_no, seq_no + len(payload), FLAGS_ACK), src_addr, dst_addr)
+            print("chamou callback")
             self.callback(self, payload)
-            self.servidor.rede.enviar(new_segment,dst_addr)
+            print("chamou a rede")
+            self.servidor.rede.enviar(new_segment, dst_addr)
 
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
            # print('recebido payload: %r' % payload)
@@ -128,9 +135,9 @@ class Conexao:
         """
         Usado pela camada de aplicação para enviar dados
         """
-        #print(len(dados))
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
-        new_segment = fix_checksum(make_header(src_port,dst_port,self.seq_no+1,self.expected_seq_no,FLAGS_ACK) + dados,src_addr,dst_addr)
+        new_segment = fix_checksum(make_header(
+            src_port, dst_port, self.seq_no+1, self.expected_seq_no, FLAGS_ACK) + dados, src_addr, dst_addr)
         # TODO: implemente aqui o envio de dados.
         self.expected_seq_no += len(dados)
         self.servidor.rede.enviar(new_segment, dst_addr)

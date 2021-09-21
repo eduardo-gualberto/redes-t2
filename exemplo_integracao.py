@@ -12,7 +12,9 @@ import asyncio
 from ip import IP
 from tcp import Servidor
 
+
 def dados_recebidos(conexao, dados):
+    print("de dados recebidos, payload = ", dados)
     if dados == b'':
         conexao.fechar()
     else:
