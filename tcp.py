@@ -86,12 +86,17 @@ class Conexao:
         self.seq_no = None
         self.ack_no = None
         # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
-        self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)
+        
         # self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
-    def _exemplo_timer(self, callback, dados):
+    # criar funções de start timer, timeout, reenviar
+    def start_timer(self,data,dst_addr):
+        self.timer = asyncio.get_event_loop().call_later(1,self.timeout,data,dst_addr)
+
         # Esta função é só um exemplo e pode ser removida
-        print('Este é um exemplo de como fazer um timer')
+    def timeout(self,data,dst_addr):
+        self.servidor.rede.enviar(data,dst_addr)
+        print(data,dst_addr)
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
 
@@ -99,7 +104,6 @@ class Conexao:
         src_addr, src_port, dst_addr, dst_port = self.id_conexao
 
         if(seq_no == self.ack_no):
-
             self.ack_no = seq_no + len(payload)
             # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
             new_segment = fix_checksum(make_header(
@@ -109,7 +113,9 @@ class Conexao:
             # NOTA: TALVEZ ESSE NAO SEJA O APROACH (POSSIVELMENTE O ESQUEMA DO TIMER SEJA O CORRETO)
             if len(payload) > 0:
                 self.servidor.rede.enviar(new_segment, dst_addr)
-
+                self.start_timer(new_segment,dst_addr)
+                #timer
+        
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
 
     # Os métodos abaixo fazem parte da API
@@ -149,6 +155,8 @@ class Conexao:
                 src_port, dst_port, self.seq_no + seqno_add, self.ack_no, FLAGS_ACK) + data, src_addr, dst_addr)
             seqno_add += len(data)
             self.servidor.rede.enviar(new_segment, dst_addr)
+            self.start_timer(data,dst_addr)
+            #timer
         self.seq_no += seqno_add
         pass
 
