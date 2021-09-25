@@ -48,7 +48,7 @@ class Servidor:
             conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao)
             # Não Tenho certeza disso aqui em baixo
             new_seq_no = random.randint(1, 1000)
-            conexao.seq_no = new_seq_no
+            conexao.seq_no = conexao.next_seq_no = new_seq_no
             conexao.ack_no = seq_no + 1
             # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
             # fazer aqui mesmo ou dentro da classe Conexao.
@@ -58,14 +58,7 @@ class Servidor:
             self.rede.enviar(dados[0], dados[1])
             if self.callback:
                 self.callback(conexao)
-        elif id_conexao in self.conexoes:
-            # Passa para a conexão adequada se ela já estiver estabelecida
-            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
-        else:
-            print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
-                  (src_addr, src_port, dst_addr, dst_port))
-
-        if (flags & FLAGS_FIN) == FLAGS_FIN:
+        elif (flags & FLAGS_FIN) == FLAGS_FIN:
             curr_conexao = self.conexoes[id_conexao]
             # ENVIAR ACK
             new_segment = make_header(
@@ -74,8 +67,13 @@ class Servidor:
             self.rede.enviar(ACK_dados[0], ACK_dados[1])
             # EXECUTAR CALLBACK DA CONEXAO COM DADOS = b''
             curr_conexao.callback(curr_conexao, b'')
-
             # O ENVIO DO 'FIN' É TRATADO EM conexao.fechar()
+        elif id_conexao in self.conexoes:
+            # Passa para a conexão adequada se ela já estiver estabelecida
+            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+        else:
+            print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
+                  (src_addr, src_port, dst_addr, dst_port))
 
 
 class Conexao:
@@ -85,18 +83,31 @@ class Conexao:
         self.callback = None
         self.seq_no = None
         self.ack_no = None
+        self.next_seq_no = None
+        self.segments = []
+        self.timer = None
         # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
-        
+
         # self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
     # criar funções de start timer, timeout, reenviar
-    def start_timer(self,data,dst_addr):
-        self.timer = asyncio.get_event_loop().call_later(1,self.timeout,data,dst_addr)
+    def start_timer(self, data, dst_addr):
+        print("chamou start timer")
+        self.timer = asyncio.get_event_loop().call_later(1, self.timeout, data, dst_addr)
 
         # Esta função é só um exemplo e pode ser removida
-    def timeout(self,data,dst_addr):
-        self.servidor.rede.enviar(data,dst_addr)
-        print(data,dst_addr)
+    def timeout(self, segment, dst_addr):
+        self.servidor.rede.enviar(segment, dst_addr)
+        # print(data,dst_addr)
+
+    def confirmar_pacote(self):
+        if self.timer:
+            self.timer.cancel()
+        if len(self.segments) != 0:
+            segment = self.segments.pop()
+            src_port, dst_port, seq_no, ack_no, flags, window_size, checksum, urg_ptr = read_header(
+                segment)
+            self.seq_no = seq_no
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
 
@@ -106,16 +117,19 @@ class Conexao:
         if(seq_no == self.ack_no):
             self.ack_no = seq_no + len(payload)
             # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
-            new_segment = fix_checksum(make_header(
-                src_port, dst_port, self.seq_no, self.ack_no, FLAGS_ACK), src_addr, dst_addr)
             self.callback(self, payload)
-            
-            # NOTA: TALVEZ ESSE NAO SEJA O APROACH (POSSIVELMENTE O ESQUEMA DO TIMER SEJA O CORRETO)
+
             if len(payload) > 0:
+                new_segment = fix_checksum(make_header(
+                    src_port, dst_port, self.seq_no, self.ack_no, FLAGS_ACK), src_addr, dst_addr)
                 self.servidor.rede.enviar(new_segment, dst_addr)
-                self.start_timer(new_segment,dst_addr)
-                #timer
-        
+            # self.start_timer(new_segment,dst_addr)
+            # timer
+            else:
+                # tratar confirmação de recebimento de segmento
+                self.confirmar_pacote()
+                pass
+
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
 
     # Os métodos abaixo fazem parte da API
@@ -152,13 +166,13 @@ class Conexao:
             src_addr, src_port, dst_addr, dst_port = self.id_conexao
             print("from mine, data send = ", len(data))
             new_segment = fix_checksum(make_header(
-                src_port, dst_port, self.seq_no + seqno_add, self.ack_no, FLAGS_ACK) + data, src_addr, dst_addr)
+                src_port, dst_port, self.next_seq_no + seqno_add, self.ack_no, FLAGS_ACK) + data, src_addr, dst_addr)
             seqno_add += len(data)
             self.servidor.rede.enviar(new_segment, dst_addr)
-            self.start_timer(data,dst_addr)
-            #timer
-        self.seq_no += seqno_add
-        pass
+            self.segments.append(new_segment)
+            self.start_timer(new_segment, dst_addr)
+            # timer
+        self.next_seq_no += seqno_add
 
     def fechar(self):
         """
