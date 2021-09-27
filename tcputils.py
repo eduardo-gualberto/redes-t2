@@ -5,12 +5,24 @@
 import struct
 
 # Valores das flags que serão usadas na nossa implementação simplificada
-FLAGS_FIN = 1<<0
-FLAGS_SYN = 1<<1
-FLAGS_RST = 1<<2
-FLAGS_ACK = 1<<4
+FLAGS_FIN = 1 << 0
+FLAGS_SYN = 1 << 1
+FLAGS_RST = 1 << 2
+FLAGS_ACK = 1 << 4
 
 MSS = 1460   # Tamanho do payload de um segmento TCP (em bytes)
+
+
+def estimatedRTT(prev_val, alpha, SRTT):
+    return (1 - alpha)*prev_val+alpha*SRTT
+
+
+def devRTT(prev_val, beta, SRTT, ERTT):
+    return (1 - beta)*prev_val+beta*abs(SRTT-ERTT)
+
+
+def TimeoutInterval(ERTT, DRTT):
+    return ERTT + 4*DRTT
 
 
 def make_header(src_port, dst_port, seq_no, ack_no, flags):
@@ -88,6 +100,3 @@ def str2addr(addr):
     Converte uma string (no formato x.y.z.w) para um endereço IPv4 binário
     """
     return bytes(int(x) for x in addr.split('.'))
-
-
-

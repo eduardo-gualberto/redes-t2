@@ -86,6 +86,7 @@ class Conexao:
         self.next_seq_no = None
         self.segments = []
         self.timer = None
+        self.timer_running = False
         # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
 
         # self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
@@ -97,17 +98,38 @@ class Conexao:
 
         # Esta função é só um exemplo e pode ser removida
     def timeout(self, segment, dst_addr):
-        self.servidor.rede.enviar(segment, dst_addr)
-        # print(data,dst_addr)
+        self.timer_running = False
+        src_addr, src_port, dst_addr, dst_port = self.id_conexao
+        src_port, dst_port, seq_no, ack_no, flags, window_size, checksum, urg_ptr = read_header(
+            segment)
+        payload = segment[4*(flags >> 12):]
+        gambiarra = fix_checksum(make_header(
+            src_port, dst_port, seq_no - 1, ack_no, flags) + payload, src_addr, dst_addr)
+        print("deu timeout = ", seq_no)
+        self.servidor.rede.enviar(gambiarra, dst_addr)
 
     def confirmar_pacote(self):
+        print("confirmou pacote")
+        self.timer_running = False
         if self.timer:
             self.timer.cancel()
         if len(self.segments) != 0:
-            segment = self.segments.pop()
+            segment = self.segments.pop(0)
             src_port, dst_port, seq_no, ack_no, flags, window_size, checksum, urg_ptr = read_header(
                 segment)
             self.seq_no = seq_no
+            if len(self.segments) != 0:
+                print("len da fila de espera pra enviar = ", len(self.segments))
+                next_seg = self.segments[0]
+                src_addr, src_port, dst_addr, dst_port = self.id_conexao
+                src_port, dst_port, seq_no, ack_no, flags, window_size, checksum, urg_ptr = read_header(
+                    next_seg)
+                payload = next_seg[4*(flags >> 12):]
+                gambiarra = fix_checksum(make_header(
+                    src_port, dst_port, seq_no - 1, ack_no, flags) + payload, src_addr, dst_addr)
+                self.servidor.rede.enviar(gambiarra, dst_addr)
+                # self.timer_running = True
+                self.start_timer(gambiarra, dst_addr)
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
 
@@ -117,13 +139,12 @@ class Conexao:
         if(seq_no == self.ack_no):
             self.ack_no = seq_no + len(payload)
             # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
-            self.callback(self, payload)
 
             if len(payload) > 0:
                 new_segment = fix_checksum(make_header(
                     src_port, dst_port, self.seq_no, self.ack_no, FLAGS_ACK), src_addr, dst_addr)
                 self.servidor.rede.enviar(new_segment, dst_addr)
-            # self.start_timer(new_segment,dst_addr)
+                self.callback(self, payload)
             # timer
             else:
                 # tratar confirmação de recebimento de segmento
@@ -163,15 +184,18 @@ class Conexao:
             # TODO: implemente aqui o envio de dados.
             # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
             # que você construir para a camada de rede.
+            print("curr seq_no = ", self.next_seq_no + seqno_add)
             src_addr, src_port, dst_addr, dst_port = self.id_conexao
-            print("from mine, data send = ", len(data))
             new_segment = fix_checksum(make_header(
                 src_port, dst_port, self.next_seq_no + seqno_add, self.ack_no, FLAGS_ACK) + data, src_addr, dst_addr)
             seqno_add += len(data)
-            self.servidor.rede.enviar(new_segment, dst_addr)
             self.segments.append(new_segment)
-            self.start_timer(new_segment, dst_addr)
-            # timer
+            print("antes timer = ", self.next_seq_no)
+            if self.timer_running == False:
+                print("fez envio")
+                self.servidor.rede.enviar(new_segment, dst_addr)
+                self.start_timer(new_segment, dst_addr)
+                self.timer_running = True
         self.next_seq_no += seqno_add
 
     def fechar(self):
