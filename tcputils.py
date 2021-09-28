@@ -13,16 +13,16 @@ FLAGS_ACK = 1 << 4
 MSS = 1460   # Tamanho do payload de um segmento TCP (em bytes)
 
 
-def estimatedRTT(prev_val, alpha, SRTT):
-    return (1 - alpha)*prev_val+alpha*SRTT
+# def estimatedRTT(prev_val, alpha, SRTT):
+#     return (1 - alpha)*prev_val+alpha*SRTT
 
 
-def devRTT(prev_val, beta, SRTT, ERTT):
-    return (1 - beta)*prev_val+beta*abs(SRTT-ERTT)
+# def devRTT(prev_val, beta, SRTT, ERTT):
+#     return (1 - beta)*prev_val+beta*abs(SRTT-ERTT)
 
 
-def TimeoutInterval(ERTT, DRTT):
-    return ERTT + 4*DRTT
+# def TimeoutInterval(ERTT, DRTT):
+#     return ERTT + 4*DRTT
 
 
 def make_header(src_port, dst_port, seq_no, ack_no, flags):

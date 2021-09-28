@@ -1,7 +1,19 @@
 import asyncio
 from tcputils import *
 import os
+import time
 import random
+
+def estimatedRTT(prev_val, alpha, SRTT):
+    return (1 - alpha)*prev_val+alpha*SRTT
+
+
+def devRTT(prev_val, beta, SRTT, ERTT):
+    return (1 - beta)*prev_val+beta*abs(SRTT-ERTT)
+
+
+def TimeoutInterval(ERTT, DRTT):
+    return ERTT + 4*DRTT
 
 
 class Servidor:
@@ -87,6 +99,10 @@ class Conexao:
         self.segments = []
         self.timer = None
         self.timer_running = False
+        self.time_SRTT = None
+        self.SRTT = None
+        self.ERTT = None
+        self.DRTT = None
         # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
 
         # self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
@@ -94,7 +110,12 @@ class Conexao:
     # criar funções de start timer, timeout, reenviar
     def start_timer(self, data, dst_addr):
         print("chamou start timer")
-        self.timer = asyncio.get_event_loop().call_later(1, self.timeout, data, dst_addr)
+        timeout = 1
+        if not self.ERTT is None:
+            timeout = TimeoutInterval(self.ERTT, self.DRTT)
+            self.ERTT = estimatedRTT(self.ERTT, .125, self.SRTT)
+            self.DRTT = devRTT(self.DRTT, .25, self.SRTT, self.ERTT)
+        self.timer = asyncio.get_event_loop().call_later(timeout, self.timeout, data, dst_addr)
 
         # Esta função é só um exemplo e pode ser removida
     def timeout(self, segment, dst_addr):
@@ -105,7 +126,7 @@ class Conexao:
         payload = segment[4*(flags >> 12):]
         gambiarra = fix_checksum(make_header(
             src_port, dst_port, seq_no - 1, ack_no, flags) + payload, src_addr, dst_addr)
-        print("deu timeout = ", seq_no)
+        print("deu timeout = ", seq_no - 1)
         self.servidor.rede.enviar(gambiarra, dst_addr)
 
     def confirmar_pacote(self):
@@ -128,7 +149,8 @@ class Conexao:
                 gambiarra = fix_checksum(make_header(
                     src_port, dst_port, seq_no - 1, ack_no, flags) + payload, src_addr, dst_addr)
                 self.servidor.rede.enviar(gambiarra, dst_addr)
-                # self.timer_running = True
+                self.timer_running = True
+                self.time_SRTT = time.time()
                 self.start_timer(gambiarra, dst_addr)
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
@@ -144,11 +166,17 @@ class Conexao:
                 new_segment = fix_checksum(make_header(
                     src_port, dst_port, self.seq_no, self.ack_no, FLAGS_ACK), src_addr, dst_addr)
                 self.servidor.rede.enviar(new_segment, dst_addr)
-                self.callback(self, payload)
             # timer
+                self.callback(self, payload)
             else:
                 # tratar confirmação de recebimento de segmento
                 self.confirmar_pacote()
+                if not self.time_SRTT is None:
+                    self.SRTT = time.time() - self.time_SRTT
+                    if self.ERTT is None:
+                        self.ERTT = self.SRTT
+                        self.DRTT = self.SRTT / 2
+                        print("ertt, drtt = ", self.ERTT, self.DRTT)
                 pass
 
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
@@ -192,6 +220,7 @@ class Conexao:
             self.segments.append(new_segment)
             print("antes timer = ", self.next_seq_no)
             if self.timer_running == False:
+                self.time_SRTT = time.time()
                 print("fez envio")
                 self.servidor.rede.enviar(new_segment, dst_addr)
                 self.start_timer(new_segment, dst_addr)
